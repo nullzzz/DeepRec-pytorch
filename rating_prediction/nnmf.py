@@ -1,11 +1,6 @@
 import torch.nn as nn
 import torch
 from torch import Tensor
-from torch.optim import RMSprop
-from tqdm import tqdm
-
-from load_data_rating import load_data_rating
-from func import *
 
 
 class NNMF(nn.Module):
@@ -56,73 +51,3 @@ class NNMF(nn.Module):
                 torch.norm(self.p) +
                 torch.norm(self.u) +
                 torch.norm(self.v))
-
-
-if __name__ == "__main__":
-    train_data, test_data, n_users, n_items = load_data_rating("../data/AllDataList.csv")
-
-    lr = 0.001
-    epochs = 500
-    batch_size = 1024
-    device = torch.device("cuda:1")
-    model = NNMF(n_users, n_items)
-    model = model.to(device)
-
-    loss_fn = torch.nn.MSELoss(reduction='sum')
-
-    optimizer = RMSprop(model.parameters(), lr=lr, weight_decay=0.001)
-
-    print(len(list(model.parameters())))
-    t = train_data.tocoo()
-    user = t.row
-    item = t.col
-    rating = t.data
-
-    t = test_data.tocoo()
-    test_user = torch.tensor(t.row, device=device)
-    test_item = torch.tensor(t.col, device=device)
-    test_rating = t.data
-
-    user = torch.tensor(user, device=device)
-    item = torch.tensor(item, device=device)
-    rating = torch.tensor(rating, device=device, dtype=torch.float)
-
-    bar = tqdm(range(epochs))
-    num_training = len(rating)
-    total_batch = num_training // batch_size
-    for epoch in bar:
-        model.train()
-        bar.set_description(f"Epoch {epoch}/{epochs}")
-
-        index = torch.tensor(np.random.permutation(num_training), device=device)  # shuffled ordering
-
-        user_random = user[index]
-        item_random = item[index]
-        rating_random = rating[index]
-
-        # train
-        for i in range(total_batch):
-
-            batch_user = user_random[i * batch_size:(i + 1) * batch_size]
-            batch_item = item_random[i * batch_size:(i + 1) * batch_size]
-            batch_rating = rating_random[i * batch_size:(i + 1) * batch_size]
-
-            pred = model(batch_user, batch_item)
-
-            loss = model.loss_func(pred, batch_rating)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            if bar:
-                bar.set_postfix(loss=loss.item())
-
-        if epoch % 10 == 9:
-            with torch.no_grad():
-                model.eval()
-                pred = model(test_user, test_item)
-                pred = pred.cpu().numpy()
-
-                bar.set_postfix(epoch=epoch, MAE=mae(pred, test_rating),
-                                RMSE=rmse(pred, test_rating),
-                                MSE=mse(pred, test_rating))
